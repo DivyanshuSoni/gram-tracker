@@ -1,16 +1,18 @@
 {
- "version": "1.4.0",
+ "version": "1.4.1",
  "date": "2026-10-19",
  "notes": [
-  "Share a product from Blinkit to Gram Tracker and it is added automatically (sharing it again refreshes it).",
-  "App updates that change the Android part now download inside the app and open Android's install box."
+  "Labels with per-100 g and per-serving columns are read correctly: columns are found by position, and the %RDA column is ignored.",
+  "The 100 g / One serving switch now shows each column's own numbers from the label.",
+  "White text on coloured table rows (like green stripes) is now read.",
+  "Lost decimal points are put back by checking both columns and the energy against each other."
  ],
  "minShell": 2,
- "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/3052059fa50eee9efe0a24f131f1007508e73993/app/",
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/f3f98e2d7fe92dd2b90a3a63dc2d5a47d5a1cea4/app/",
  "files": {
   "app.js": {
-   "sha256": "05e837444d64cd2d47e11633f6bf8dc1d8526071469752a115cd97dc7014d276",
-   "size": 76933
+   "sha256": "822c99ff40836102fa25f35514c861b2cfe8ac4446c65a71ff906bfdc5c3f4db",
+   "size": 78316
   },
   "db.js": {
    "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
@@ -37,8 +39,8 @@
    "size": 2912
   },
   "label.js": {
-   "sha256": "1d2df671dc2c1b22868b0c82399463460041826eafbfdef59bf315b51c2c6b65",
-   "size": 22587
+   "sha256": "4d3cf1302bc0fb40096b81ddfc8bc7354c71b7931fa814e92a9ade314ecffd07",
+   "size": 37251
   },
   "link.js": {
    "sha256": "444f8a998e3917f120ad2758305e51363869d083f14b6966d83a87f58e5b93dc",
@@ -53,7 +55,7 @@
    "size": 18874
   },
   "sw.js": {
-   "sha256": "4d107781edebae920ca09035d830b9392f759f022c42d30ec280d49145fe604c",
+   "sha256": "40f1dd0e60d8dd49a98c6217cbdbf78a10fefc28e54dd8002a053dd43acd54a0",
    "size": 2414
   },
   "vendor/core/tesseract-core-lstm.wasm.js": {
@@ -73,8 +75,8 @@
    "size": 123724
   },
   "version.json": {
-   "sha256": "32b1b59a0904698ee4d55b41dd19c3964fd6fed41e27fde453e27929963d9d10",
-   "size": 297
+   "sha256": "98031a2076ee2b81d343b464ada538c6992744ff7dc81c3dd8dc0d513d6a1437",
+   "size": 477
   }
  },
  "apk": {
