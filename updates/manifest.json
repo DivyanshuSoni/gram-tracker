@@ -1,15 +1,15 @@
 {
- "version": "1.4.2",
+ "version": "1.4.3",
  "date": "2026-10-19",
  "notes": [
-  "Roomier energy field in the food form: the number and the kcal/kJ picker no longer squeeze each other."
+  "On the Foods tab the floating button now says + Food (+ Recipe on Recipes) and adds one directly."
  ],
  "minShell": 2,
- "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/f68c0cf3ef7555c6261ea2d79d51009d85c1f06d/app/",
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/0748589e2055289b2d93c2a49e06909a23d2e813/app/",
  "files": {
   "app.js": {
-   "sha256": "26ea145478392cbc87cf31a933c354bfeb5b1e6c8ed11d6ca21d92a90c0a4fb4",
-   "size": 78323
+   "sha256": "243ae1ae37ec4521a1184f6eb82f48715cecb9c098419de8820200c70bf579ac",
+   "size": 78678
   },
   "db.js": {
    "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
@@ -52,7 +52,7 @@
    "size": 19079
   },
   "sw.js": {
-   "sha256": "2b1df8421e535c4dfb701bc0d3b1fbba6f88bf480eca3e6ff448e897db17cf03",
+   "sha256": "317dbb769483f695d0643c1278a9bf3bcc0e6d5be6af813027b73d87a40226d6",
    "size": 2414
   },
   "vendor/core/tesseract-core-lstm.wasm.js": {
@@ -72,8 +72,8 @@
    "size": 123724
   },
   "version.json": {
-   "sha256": "a829d40f629e387320a50e894e0cb4501212d1881b1f60243dccf9f417f628d9",
-   "size": 183
+   "sha256": "19572c194becb1badd2572e7ad3eb4634e4a61ad09cad71c3e36d135b1215353",
+   "size": 178
   }
  },
  "apk": {
