@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -381,7 +381,7 @@ const LABEL_FIELDS = [['kcal', 'Energy'], ['protein', 'Protein (g)'], ['carbs', 
 function openFoodSheet(id, opts = {}){
   const f = id ? S.foods.find(x => x.id === id) : null;
   const lab = f?.label;
-  F = {id: f?.id || uid(), isNew: !f, returnTo: opts.returnTo || null, basis: lab?.basis || '100', unit: lab?.unit || 'kcal', source: f?.source || 'manual', photo: f?.photo || null, picks: [], candidates: [], link: f?.link || opts.link || ''};
+  F = {id: f?.id || uid(), isNew: !f, returnTo: opts.returnTo || null, basis: lab?.basis || '100', unit: lab?.unit || 'kcal', source: f?.source || 'manual', photo: f?.photo || null, picks: [], candidates: [], link: f?.link || opts.link || '', colValues: lab?.columns ? JSON.parse(JSON.stringify(lab.columns)) : null};
   const vals = lab?.values || (f ? per100Of(f) : {});
   currentSheet = 'food';
   const v = k => esc(vals[k] ?? '');
@@ -411,6 +411,7 @@ function openFoodSheet(id, opts = {}){
     </div>
     <h3>The label’s numbers are for</h3>
     <div class="pill-seg" role="group" aria-label="Label basis"><button type="button" data-basis="100" aria-pressed="${F.basis === '100'}">100 g</button><button type="button" data-basis="serving" aria-pressed="${F.basis === 'serving'}">One serving</button></div>
+    <p class="hint" id="fBasisHint"></p>
     <div class="fields">
       <label class="f">Serving size (g)<input class="num" id="f_servingG" inputmode="decimal" value="${esc(f?.servingG ?? '')}" placeholder="${F.basis === 'serving' ? 'needed' : 'optional'}"></label>
       <label class="f">Serving name<input id="f_servingLabel" value="${esc(f?.servingLabel ?? '')}" placeholder="e.g. 1 biscuit"></label>
@@ -437,15 +438,28 @@ function openFoodSheet(id, opts = {}){
   $('#f_unit').onchange = e => { F.unit = e.target.value; updateFoodCalc(); };
   $('#fSave').onclick = saveFood;
   if ($('#fDel')) armButton($('#fDel'), async () => { await removeDoc('foods', F.id); closeSheet(); toast('Food deleted'); });
-  updateFoodCalc();
+  setBasis(F.basis);
   if (opts.scan) setTimeout(() => $('#fFile').click(), 60);
   else if (opts.link && opts.autoLink) setTimeout(onProductLink, 60);
   else LabelReader.warm().catch(() => {});
 }
+/* The 100 g / One serving switch. When the label had both columns, each side shows that column's own
+   numbers (edits are kept per side); otherwise it changes how the typed numbers are read. */
+const readLabelFields = () => Object.fromEntries(LABEL_FIELDS.map(([k]) => [k, num($('#f_' + k).value)]));
+function fillLabelFields(v){ LABEL_FIELDS.forEach(([k]) => { $('#f_' + k).value = v[k] != null ? r1x(v[k]) : ''; }); }
+const r1x = n => Math.round(n * 100) / 100;
 function setBasis(b){
+  if (F.colValues && F.basis !== b) {
+    F.colValues[F.basis] = readLabelFields();
+    if (F.colValues[b]) { fillLabelFields(F.colValues[b]); $('#f_unit').value = 'kcal'; F.unit = 'kcal'; }
+  }
   F.basis = b;
   $$('[data-basis]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.basis === b)));
   $('#f_servingG').placeholder = b === 'serving' ? 'needed' : 'optional';
+  const both = F.colValues && F.colValues['100'] && F.colValues.serving;
+  $('#fBasisHint').textContent = both
+    ? 'Your label has both columns. Each side shows its own numbers from the label; both save the same food.'
+    : b === 'serving' ? 'The numbers below are for one serving of the size above. They are converted to per 100 g.' : '';
   updateFoodCalc();
 }
 /* The core conversion: label values (as printed) -> per 100 g. */
@@ -490,9 +504,11 @@ async function onLabelPhoto(file){
       setStatus('#fStatus', 'Couldn’t find nutrition numbers in this photo. Try again closer, flat and well lit, with only the table in frame, or type the values.' + rawBlock(res.text), true);
       return;
     }
-    setBasis(res.basis);
+    F.colValues = res.servingValues && res.basis === '100' ? {'100': {...res.values}, serving: {...res.servingValues}} : null;
+    F.basis = res.basis;
     if (res.servingG) $('#f_servingG').value = res.servingG;
-    LABEL_FIELDS.forEach(([k]) => { if (res.values[k] != null) $('#f_' + k).value = res.values[k]; });
+    LABEL_FIELDS.forEach(([k]) => { $('#f_' + k).value = res.values[k] != null ? res.values[k] : ''; });
+    setBasis(res.basis);
     $('#f_unit').value = 'kcal'; F.unit = 'kcal'; F.source = 'label';
     const missing = LABEL_FIELDS.filter(([k]) => res.values[k] == null).map(([, l]) => l.replace(/ \(.*\)/, '').toLowerCase());
     setStatus('#fStatus', `Read ${res.found} value${res.found > 1 ? 's' : ''} from the label${missing.length ? ` (not found: ${esc(missing.join(', '))})` : ''}. Compare with the photo and fix anything that’s off.` +
@@ -546,7 +562,7 @@ async function onProductLink(){
   F.link = url; F.source = 'link';
   if (d.name && (!$('#f_name').value.trim() || F.picks.length)) { $('#f_name').value = d.name; F.picks = []; F.candidates = []; drawNameChips(); }
   if (got) {
-    setBasis('100'); $('#f_unit').value = 'kcal'; F.unit = 'kcal';
+    F.colValues = null; setBasis('100'); $('#f_unit').value = 'kcal'; F.unit = 'kcal';
     LABEL_FIELDS.forEach(([k]) => { $('#f_' + k).value = d.values[k] != null ? d.values[k] : ''; });
   }
   if (d.servingG) { $('#f_servingG').value = r1(d.servingG); if (!$('#f_servingLabel').value.trim()) $('#f_servingLabel').value = '1 serve'; }
@@ -595,10 +611,10 @@ async function saveFood(){
   const msg = !name ? 'Give the food a name.' : err ? err : per100.kcal == null ? 'Enter the energy value.' : '';
   e.textContent = msg; e.hidden = !msg; if (msg) return;
   const food = {id: F.id, name, brand: $('#f_brand').value.trim(),
-    kcal: r1(per100.kcal), protein: r1(per100.protein), carbs: r1(per100.carbs), fat: r1(per100.fat), fiber: r1(per100.fiber),
-    sugar: per100.sugar == null ? null : r1(per100.sugar), sodium: per100.sodium == null ? null : r0(per100.sodium),
+    kcal: r1(per100.kcal), protein: r1x(per100.protein), carbs: r1x(per100.carbs), fat: r1x(per100.fat), fiber: r1x(per100.fiber),
+    sugar: per100.sugar == null ? null : r1x(per100.sugar), sodium: per100.sodium == null ? null : r0(per100.sodium),
     servingG: num($('#f_servingG').value), servingLabel: $('#f_servingLabel').value.trim(), packG: num($('#f_packG').value),
-    label: {basis: F.basis, unit: F.unit, values: printed}, source: F.source, photo: F.photo, link: F.link || null};
+    label: {basis: F.basis, unit: F.unit, values: printed, columns: F.colValues ? {...F.colValues, [F.basis]: printed} : null}, source: F.source, photo: F.photo, link: F.link || null};
   const back = F.returnTo, isNew = F.isNew;
   await saveDoc('foods', food);
   toast(`${isNew ? 'Saved' : 'Updated'}: ${r0(food.kcal)} kcal per 100 g`);

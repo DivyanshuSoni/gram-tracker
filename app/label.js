@@ -41,6 +41,37 @@
       const g = opt.minChannel ? Math.min(d[i], d[i + 1], d[i + 2]) : (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
       d[i] = g; hist[g]++;
     }
+    if (opt.rows) {
+      /* Striped tables (white text on coloured rows, dark text on white rows): find each row's background
+         and whether its text is lighter or darker, flip the light-text rows, then even out the background
+         so every row ends up as dark text on white. */
+      const bg = new Float32Array(h), bright = new Float32Array(h + 1), dark = new Float32Array(h + 1);
+      const hst = new Uint32Array(256);
+      for (let y = 0; y < h; y++) {
+        hst.fill(0);
+        for (let x = 0; x < w; x++) hst[d[(y * w + x) * 4]]++;
+        let acc2 = 0, med = 255;
+        for (let v = 0; v < 256; v++) { acc2 += hst[v]; if (acc2 >= w / 2) { med = v; break; } }
+        bg[y] = med;
+        let b = 0, k = 0;
+        for (let x = 0; x < w; x++) { const v = d[(y * w + x) * 4]; if (v > med + 45) b++; else if (v < med - 45) k++; }
+        bright[y + 1] = bright[y] + b; dark[y + 1] = dark[y] + k;
+      }
+      const R = Math.max(6, Math.round(h * 0.012));
+      for (let y = 0; y < h; y++) {
+        const y0 = Math.max(0, y - R), y1 = Math.min(h, y + R + 1);
+        const lightText = bright[y1] - bright[y0] > (dark[y1] - dark[y0]) * 1.2;
+        const base = lightText ? 255 - bg[y] : bg[y];
+        for (let x = 0; x < w; x++) {
+          const i2 = (y * w + x) * 4;
+          let v = lightText ? 255 - d[i2] : d[i2];
+          v = Math.max(0, Math.min(255, v * 255 / Math.max(60, base)));
+          d[i2] = d[i2 + 1] = d[i2 + 2] = v;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c;
+    }
     const total = w * h; let lo = 0, hi = 255, acc = 0;
     for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > total * 0.02) { lo = i; break; } }
     acc = 0; for (let i = 255; i >= 0; i--) { acc += hist[i]; if (acc > total * 0.02) { hi = i; break; } }
@@ -70,68 +101,284 @@
   }
 
   /* Text that is too small or too big both read badly, and photo sizes vary a lot. Read at a standard size first;
-     if the numbers don't add up (energy vs. macros) or values are missing, try a smaller and a larger size and keep the best. */
+     if the numbers don't add up (energy vs. macros) or values are missing, try other sizes and keep the best.
+     Striped tables (white text on coloured rows) are handled by flipping those rows (prepare: rows). */
   async function readLabel(file, onProgress) {
-    const attempt = async fit => {
-      const data = await recognize(file, '6', p => onProgress && onProgress(p * 0.7), { fit });
-      let text = data.text;
-      try { text = await refineNumbers(data, p => onProgress && onProgress(0.7 + p * 0.3)); }
+    const attempt = async (fit, rows) => {
+      const data = await recognize(file, '6', p => onProgress && onProgress(p * 0.6), { fit, rows });
+      let fixes = new Map();
+      try { fixes = await refineNumbers(data, p => onProgress && onProgress(0.6 + p * 0.4)); }
       catch (e) { console.warn('number re-read skipped', e); }
-      const parsed = parseLabel(text);
-      return { text, ...parsed, score: parsed.found + (parsed.energyOk ? 3 : 0) };
+      const text = rebuildText(data, fixes);
+      const table = readTable(data, fixes, text);
+      const lineRead = parseLabel(text);
+      if (table && table.basis === lineRead.basis) {
+        const added = [];
+        for (const [k, v] of Object.entries(lineRead.values)) if (table.values[k] == null) { table.values[k] = v; added.push(k); }
+        if (added.length) { table.found = Object.keys(table.values).length; table.energyOk = energyOk(table.values); }
+      }
+      const parsed = table && (table.found >= lineRead.found || table.crossOk) ? table : lineRead;
+      return { text, ...parsed, score: parsed.found + (parsed.energyOk ? 3 : 0) + (parsed.crossOk ? 2 : 0) };
     };
-    let best = await attempt(2000);
-    for (const fit of [1400, 2800]) {
+    // striped-row handling first; plain reading and other sizes only if the numbers don't add up
+    let best = await attempt(2000, true);
+    for (const [fit, rows] of [[2000, false], [1400, true], [2800, true], [1400, false]]) {
       if (best.found >= 5 && best.energyOk) break;
-      const r = await attempt(fit);
+      const r = await attempt(fit, rows);
       if (r.score > best.score) best = r;
     }
     return best;
   }
 
-  /* Small decimal points get lost when the whole label is read at once (12.6 -> 126).
-     Re-read each number on a nutrient row on its own: crop it, enlarge it, and read it in digits-only mode.
-     Only accept the re-read when it has the same digits (so it can add a missing point, never invent digits). */
+  /* Small decimal points get lost when the whole label is read at once (12.6 -> 126), and the unit "g"
+     is often read as a 9 (2.52g -> 2529). Re-read each number on a nutrient row on its own: crop it, enlarge it,
+     and read it allowing only digits, the point and unit letters. The re-read is accepted when it keeps the
+     digits that were already read (it may add a missing point or digit, or drop a "g" read as 9). */
   const digitsOf = t => (t.match(/\d/g) || []).join('');
+  const isSubsequence = (a, b) => { let i = 0; for (const ch of b) if (ch === a[i]) i++; return i === a.length; };
+  const NUM_RE = /(\d+(?:[.,]\d+)?)\s*(kcal|kj|mcg|mg|g|%)?/i;
   function refineNumbers(data, onProgress) {
     return queued(async () => {
       const worker = await getWorker();
-      const lines = linesOf(data);
       const jobs = [];
-      for (const l of lines) {
+      for (const l of linesOf(data)) {
         const lc = (l.text || '').toLowerCase();
         if (!ROWS.some(r => r.re.test(lc))) continue;
-        for (const w of (l.words || [])) if (/\d/.test(w.text || '') && w.bbox && !/%/.test(w.text)) jobs.push({ l, w });
+        for (const w of (l.words || [])) if (/\d/.test(w.text || '') && w.bbox) jobs.push(w);
       }
       const fixes = new Map();
       try {
-        await worker.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789.,' });
+        await worker.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789.,gmkcalKJ%*' });
         for (let i = 0; i < jobs.length; i++) {
-          const { w } = jobs[i];
-          const crop = cropWord(data.canvas, w.bbox);
-          const { data: r } = await worker.recognize(crop);
-          const read = (r.text || '').trim().replace(',', '.').replace(/[^\d.]/g, '').replace(/^\.+|\.+$/g, '');
-          const orig = (w.text.match(/\d[\d.,]*/) || [''])[0];
-          if (read && /^\d+(\.\d+)?$/.test(read) && digitsOf(read) === digitsOf(orig) && read !== orig.replace(',', '.')) fixes.set(w, { orig, read });
+          const w = jobs[i];
+          const { data: r } = await worker.recognize(cropWord(data.canvas, w.bbox));
+          const read = (r.text || '').trim().replace(/\s+/g, '');
+          const m = read.match(NUM_RE);
+          const orig = digitsOf(w.text);
+          if (m) {
+            let num = m[1].replace(',', '.'), unit = (m[2] || '').toLowerCase(), dg = digitsOf(num);
+            // "25g" re-read as "259": the extra 9 is the unit, not a digit
+            if (!unit && dg === orig + '9' && /\dg(?![a-z])/i.test(w.text)) { num = num.slice(0, -1).replace(/\.$/, ''); unit = 'g'; dg = orig; }
+            const ok = dg === orig || (dg.length > orig.length && isSubsequence(orig, dg)) || (unit === 'g' && orig === dg + '9');
+            if (ok) fixes.set(w, { num, unit, mark: /[*%]/.test(read) || /[*%]/.test(w.text) });
+          }
           if (onProgress) onProgress((i + 1) / jobs.length);
         }
       } finally {
         await worker.setParameters({ tessedit_pageseg_mode: '6', tessedit_char_whitelist: '' });
       }
-      if (!fixes.size) return data.text;
-      // rebuild the text line by line, swapping in the corrected numbers
-      return lines.map(l => {
-        let t = (l.text || '').replace(/\n$/, '');
-        for (const w of (l.words || [])) {
-          const f = fixes.get(w);
-          if (!f) continue;
-          const at = t.indexOf(w.text);
-          if (at >= 0) t = t.slice(0, at) + w.text.replace(f.orig, f.read) + t.slice(at + w.text.length);
-        }
-        return t;
-      }).join('\n');
+      return fixes;
     });
   }
+  /* The whole text again, with re-read numbers swapped in (shown under "Show the text that was read"). */
+  function rebuildText(data, fixes) {
+    if (!fixes.size) return data.text;
+    return linesOf(data).map(l => {
+      let t = (l.text || '').replace(/\n$/, '');
+      for (const w of (l.words || [])) {
+        const f = fixes.get(w); if (!f) continue;
+        const at = t.indexOf(w.text);
+        if (at >= 0) t = t.slice(0, at) + f.num + (f.unit ? ' ' + f.unit : '') + (f.mark ? '*' : '') + t.slice(at + w.text.length);
+      }
+      return t;
+    }).join('\n');
+  }
+
+  /* ---------- table reading: columns by position on the page ---------- */
+  const TABLE_KEYS = ['energy', 'protein', 'carbs', 'sugar', 'fat', 'fiber', 'sodium'];
+  function cellValue(w, fixes, key) {
+    const f = fixes.get(w);
+    let num, unit;
+    if (f) { num = parseFloat(f.num); unit = f.unit; }
+    else { const m = (w.text || '').replace(',', '.').match(NUM_RE); if (!m) return null; num = parseFloat(m[1]); unit = (m[2] || '').toLowerCase(); }
+    if (!isFinite(num)) return null;
+    if (key === 'energy' && unit === 'kj') num /= 4.184;
+    if (key === 'sodium' && unit === 'g') num *= 1000;
+    return num;
+  }
+  function readTable(data, fixes, text) {
+    const W = data.canvas ? data.canvas.width : 1;
+    const lines = linesOf(data);
+    const rows = [], cells = [];
+    let firstRowY = Infinity;
+    for (const l of lines) {
+      const words = (l.words || []).filter(w => w.bbox);
+      const labelText = clean(words.filter(w => !/\d/.test(w.text)).map(w => w.text).join(' '));
+      const row = ROWS.find(r => r.re.test(labelText) && !(r.not && r.not.test(labelText)));
+      if (!row || !TABLE_KEYS.includes(row.key)) continue;
+      const nums = words.filter(w => /\d/.test(w.text) && !/^\W*\(/.test(w.text) && !/\)\W*$/.test(w.text));
+      if (!nums.length) continue;
+      firstRowY = Math.min(firstRowY, l.bbox ? l.bbox.y0 : Infinity);
+      const r = { key: row.key, total: /tota/.test(labelText), nums };
+      rows.push(r);
+      nums.forEach(w => cells.push({ w, x: (w.bbox.x0 + w.bbox.x1) / 2 / W, mark: /[*%]/.test(w.text) || !!fixes.get(w)?.mark }));
+    }
+    if (rows.length < 3) return null;
+    // columns = groups of numbers at the same x position
+    const xs = cells.map(c => c.x).sort((a, b) => a - b), cols = [];
+    for (const x of xs) { const c = cols[cols.length - 1]; if (c && x - c.max < 0.06) { c.max = x; c.xs.push(x); } else cols.push({ min: x, max: x, xs: [x] }); }
+    cols.forEach(c => { c.x = c.xs.reduce((a, b) => a + b, 0) / c.xs.length; c.count = c.xs.length; });
+    const real = cols.filter(c => c.count >= 3);
+    if (!real.length) return null;
+    const colOf = x => real.find(c => x >= c.min - 0.03 && x <= c.max + 0.03);
+    cells.forEach(c => { const col = colOf(c.x); if (col) { col.marks = (col.marks || 0) + (c.mark ? 1 : 0); } });
+    // header words above the first nutrient row name the columns
+    const header = [];
+    for (const l of lines) for (const w of (l.words || [])) if (w.bbox && w.bbox.y1 <= firstRowY + 2) header.push({ t: (w.text || '').toLowerCase(), x: (w.bbox.x0 + w.bbox.x1) / 2 / W });
+    const near = (re, col) => header.some(h => re.test(h.t) && Math.abs(h.x - col.x) < 0.09);
+    real.forEach(c => {
+      if (near(/rda|%/, c) || (c.marks || 0) >= c.count * 0.5) c.role = 'rda';
+      else if (near(/100/, c)) c.role = '100';
+      else if (near(/serv|\(\d+\s*[g9]\)?|\d+\s*[g9]\)/, c)) c.role = 'serving';
+    });
+    const servingG = findServing(text);
+    let num = real.filter(c => c.role !== 'rda');
+    if (!num.length) return null;
+    // no header luck: with two number columns, the one ~100/serving times larger is per 100 g
+    if (!num.some(c => c.role === '100') && num.length >= 2) {
+      const [a, b] = num;
+      if (!a.role && !b.role) { a.role = '100'; b.role = 'serving'; }
+    }
+    if (!num.some(c => c.role)) num[0].role = num.length === 1 && /per\s*serv/i.test(text) && !/100\s*(g|ml)/i.test(text) ? 'serving' : '100';
+    const tokensOf = role => {
+      const col = num.find(c => c.role === role); if (!col) return null;
+      if (col.decimals === undefined) {
+        const seen = [0, 0, 0];
+        for (const r of rows) for (const w of r.nums) {
+          if (colOf((w.bbox.x0 + w.bbox.x1) / 2 / W) !== col) continue;
+          const txt = fixes.get(w)?.num || w.text, m = String(txt).match(/\d\.(\d+)/);
+          if (m) seen[Math.min(2, m[1].length)]++;
+        }
+        const top = seen.indexOf(Math.max(...seen));
+        col.decimals = seen[top] >= 2 ? top : null;
+      }
+      const t = {};
+      for (const r of rows) {
+        const w = r.nums.find(w => colOf((w.bbox.x0 + w.bbox.x1) / 2 / W) === col); if (!w) continue;
+        const key = r.key === 'energy' ? 'kcal' : r.key;
+        if (t[key] && !(r.key === 'sugar' && r.total)) continue;
+        t[key] = numCandidates(w, fixes.get(w), r.key, col.decimals);
+      }
+      return t;
+    };
+    const notes = [];
+    const t100 = tokensOf('100'), tS = tokensOf('serving');
+    if (t100 && tS) notes.push('The label has per-100 g and per-serving columns; both were read and checked against each other.');
+    if (num.length < real.length) notes.push('The %RDA column was ignored.');
+    const sol = solveTable(t100, tS, servingG);
+    if (!sol) return null;
+    if (sol.corrected.length) notes.push(`Missing decimal points were put back in ${sol.corrected.join(', ')} so that both columns and the energy agree. Double-check against the photo.`);
+    const values = sol.v100 ? round2(sol.v100) : null, servingValues = sol.vS ? round2(sol.vS) : null;
+    const basis = values ? '100' : 'serving', main = values || servingValues;
+    const got = Object.keys(main).length;
+    return { basis, servingG, values: main, servingValues, notes, found: got, energyOk: energyOk(main), crossOk: sol.crossOk,
+      confidence: got >= 4 && energyOk(main) ? 'good' : got >= 2 ? 'partial' : 'low' };
+  }
+
+  /* Every value a misread number could really be: the printed point if there is one, or the same digits
+     with 0, 1 or 2 decimals; a final 9 may be the unit "g". Lower penalty = more likely. */
+  const MACROS = ['protein', 'carbs', 'fat', 'fiber', 'sugar'];
+  function numCandidates(w, fix, key, prefK) {
+    const out = new Map();
+    const add = (v, pen) => { if (!isFinite(v) || v < 0) return; const k = Math.round(v * 1000) / 1000; if (!out.has(k) || out.get(k) > pen) out.set(k, pen); };
+    const kj = /kj/i.test((w.text || '') + (fix?.unit || ''));
+    for (const [src, base] of [[w.text, 0], [fix ? fix.num + (fix.unit || '') : '', 0.05]]) {
+      if (!src) continue;
+      const t = String(src).replace(',', '.');
+      const core = (t.match(/\d[\d.]*/) || [''])[0].replace(/\.+$/, '');
+      if (!core) continue;
+      const hasG = /\d\s*g\b/i.test(t) && !/mg/i.test(t);
+      const variants = [[core, base]];
+      if (!hasG && core.replace('.', '').length >= 2 && /9$/.test(core)) variants.push([core.slice(0, -1).replace(/\.$/, ''), base + 0.3]);
+      for (const [c, pen] of variants) {
+        const dg = c.replace('.', '');
+        if (!dg) continue;
+        if (c.includes('.')) add(parseFloat(c), pen);
+        for (let k = 0; k <= 2; k++) {
+          if (dg.length <= k) continue;
+          let p = pen + (c.includes('.') ? 0.6 : 0) + 0.15 * k;
+          if (dg.length > 1 && dg[0] === '0' && k < dg.length - 1) p += 1.5;          // "042" can only be 0.42
+          if (prefK != null && MACROS.includes(key) && k !== prefK) p += 0.35;      // columns print the same decimals
+          add(parseInt(dg, 10) / 10 ** k, p);
+        }
+      }
+    }
+    let list = [...out].map(([v, pen]) => ({ v: kj && key === 'energy' ? v / 4.184 : v, pen }));
+    if (key === 'energy' || key === 'sodium') list = list.map(c => ({ ...c, pen: c.pen + (Number.isInteger(c.v) ? 0 : 0.2) }));
+    return list.sort((a, b) => a.pen - b.pen);
+  }
+
+  /* Choose one value per nutrient so that (1) per-100 g = per-serving x 100 / serving size, (2) protein, carbs,
+     fat and fibre add up to the energy, and (3) nothing weighs more than 100 g per 100 g. */
+  function solveTable(t100, tS, sg) {
+    const f = sg > 0 ? 100 / sg : null, keys = new Set([...Object.keys(t100 || {}), ...Object.keys(tS || {})]);
+    if (!keys.size) return null;
+    const opts = {};
+    for (const k of keys) {
+      const A = t100?.[k], B = tS?.[k], o = [];
+      if (A && B && f) {
+        for (const a of A.slice(0, 12)) for (const b of B.slice(0, 12)) {
+          const e = b.v * f, err = Math.abs(a.v - e) / Math.max(a.v, e, 0.05);
+          if (err <= 0.025 || Math.abs(a.v - e) <= 0.06) o.push({ v100: a.v, vS: b.v, pen: a.pen + b.pen + err * 4, both: true });
+        }
+      }
+      // columns that can't be matched: trust the per-100 g reading a little more (the energy check can still overrule)
+      if (B && f) B.slice(0, 6).forEach(b => o.push({ v100: b.v * f, vS: b.v, pen: b.pen + 1.9 }));
+      if (A) A.slice(0, 6).forEach(a => o.push({ v100: a.v, vS: f ? a.v / f : null, pen: a.pen + (B ? 1.6 : 0) }));
+      if (!A && B && !f) B.slice(0, 6).forEach(b => o.push({ v100: null, vS: b.v, pen: b.pen }));
+      opts[k] = o.sort((x, y) => x.pen - y.pen).slice(0, 8);
+    }
+    const per = o => o.v100 != null ? o.v100 : o.vS;          // the column we judge limits on
+    const limit = t100 || f ? 100 : (sg || 100);
+    const energy = opts.kcal?.[0];
+    const macros = ['protein', 'carbs', 'fat'].filter(k => opts[k]);
+    let best = null;
+    const pick = {};
+    const walk = i => {
+      if (i === macros.length) {
+        const v = k => pick[k] ? per(pick[k]) : 0;
+        // everything solid must fit in the portion (fibre may already be counted inside carbs)
+        if (v('protein') + v('carbs') + v('fat') + Math.max(0, v('fiber') - v('carbs')) > limit * 1.02) return;
+        let score = macros.reduce((a, k) => a + pick[k].pen, 0);
+        if (energy) {
+          const kcal = per(energy), est = 4 * v('protein') + 4 * v('carbs') + 9 * v('fat') + 2 * v('fiber');
+          score += Math.abs(est - kcal) / Math.max(kcal, 1) * 30;   // the energy has the final say
+        }
+        if (!best || score < best.score) best = { score, pick: { ...pick } };
+        return;
+      }
+      for (const o of opts[macros[i]]) { if (per(o) > limit * 1.02) continue; pick[macros[i]] = o; walk(i + 1); }
+      delete pick[macros[i]];
+    };
+    walk(0);
+    const chosen = { ...(best ? best.pick : {}) };
+    if (energy) chosen.kcal = energy;
+    // fibre, sugar and sodium: their own most likely reading (sugar and fibre must fit inside carbs + 10 g)
+    for (const k of ['fiber', 'sugar', 'sodium']) {
+      if (!opts[k]) continue;
+      const carbs = chosen.carbs ? per(chosen.carbs) : Infinity;
+      chosen[k] = opts[k].find(o => k === 'sodium' || (k === 'sugar' ? per(o) <= carbs * 1.02 : per(o) <= carbs + 10)) || opts[k][0];
+    }
+    const v100 = {}, vS = {}, corrected = [];
+    let both = 0, n = 0;
+    for (const [k, o] of Object.entries(chosen)) {
+      if (o.v100 != null) v100[k] = o.v100;
+      if (o.vS != null) vS[k] = o.vS;
+      n++; if (o.both) both++;
+      const first = (t100?.[k] || tS?.[k] || [])[0];
+      const shown = t100?.[k] ? o.v100 : o.vS;
+      if (first && shown != null && Math.abs(first.v - shown) > Math.max(0.05, shown * 0.02)) corrected.push(k === 'kcal' ? 'energy' : k);
+    }
+    return { v100: t100 || f ? v100 : null, vS: tS || (t100 && f) ? vS : null, corrected, crossOk: n > 0 && both === n };
+  }
+
+  const round2 = v => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, Math.round(x * 100) / 100]));
+  function energyOk(v) {
+    const m = 4 * (v.protein || 0) + 4 * (v.carbs || 0) + 9 * (v.fat || 0) + 2 * (v.fiber || 0);
+    return v.kcal > 0 && m > 0 && Math.abs(m - v.kcal) / v.kcal <= 0.15;
+  }
+
+
   function cropWord(src, b) {
     const h = b.y1 - b.y0, pad = Math.round(h * 0.35);
     const sx = Math.max(0, b.x0 - pad), sy = Math.max(0, b.y0 - pad);
@@ -267,7 +514,7 @@
       const unit = (m[3] || '').replace('µg', 'mcg');
       if (unit === '%') continue;
       const after = line.slice(re.lastIndex, re.lastIndex + 2);
-      if (/^\s*%/.test(after)) continue;
+      if (/^\s*[%*]/.test(after)) continue;
       out.push({ v: parseFloat(m[2]), unit, lt: !!m[1] });
     }
     return out;
@@ -289,7 +536,8 @@
 
   /* Which column holds per-100 g values? Look at the header for "per 100" vs "per serving". */
   function findColumns(lines) {
-    for (const l of lines) {
+    for (const raw of lines) {
+      const l = raw.replace(/serv(ing|e)?s?\s*size\s*:?\s*[\d.]+\s*(g|ml)?|total\s*serv\w*\s*:?\s*[\d.]+/g, ' ');
       const i100 = l.search(/(per|\/)\s*100\s*(g|gm|ml|grams?)\b|100\s*(g|ml)\b/);
       const iSrv = l.search(/serv|portion|piece|biscuit|scoop|per\s*pack|per\s*bar/);
       if (i100 >= 0 && iSrv >= 0) return { has100: true, hasServing: true, idx100: i100 < iSrv ? 0 : 1 };

@@ -1,8 +1,10 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "date": "2026-10-19",
   "notes": [
-    "Share a product from Blinkit to Gram Tracker and it is added automatically (sharing it again refreshes it).",
-    "App updates that change the Android part now download inside the app and open Android's install box."
+    "Labels with per-100 g and per-serving columns are read correctly: columns are found by position, and the %RDA column is ignored.",
+    "The 100 g / One serving switch now shows each column's own numbers from the label.",
+    "White text on coloured table rows (like green stripes) is now read.",
+    "Lost decimal points are put back by checking both columns and the energy against each other."
   ]
 }
