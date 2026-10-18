@@ -29,7 +29,7 @@
   async function prepare(file, opt = {}) {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const long = Math.max(bmp.width, bmp.height);
-    const scale = opt.side ? Math.min(1, opt.side / long) : Math.min(3, Math.max(1, 2200 / long));
+    const scale = opt.fit ? Math.max(0.25, Math.min(3, opt.fit / long)) : opt.side ? Math.min(1, opt.side / long) : Math.min(3, Math.max(1, 2200 / long));
     const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -52,24 +52,98 @@
 
   /* One OCR job at a time on the shared worker. psm 6 = one block of text (labels), 11 = scattered text (packaging). */
   let queue = Promise.resolve();
-  function recognize(file, psm, onProgress, opt) {
-    const job = async () => {
-      progressCb = onProgress || null;
-      try {
-        const [worker, canvas] = await Promise.all([getWorker(), prepare(file, opt)]);
-        await worker.setParameters({ tessedit_pageseg_mode: psm });
-        const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
-        return { ...data, imgH: canvas.height };
-      } finally { progressCb = null; }
-    };
+  function queued(job) {
     const p = queue.then(job, job);
     queue = p.catch(() => {});
     return p;
   }
+  function recognize(file, psm, onProgress, opt) {
+    return queued(async () => {
+      progressCb = onProgress || null;
+      try {
+        const [worker, canvas] = await Promise.all([getWorker(), prepare(file, opt)]);
+        await worker.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: '' });
+        const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
+        return { ...data, imgH: canvas.height, canvas };
+      } finally { progressCb = null; }
+    });
+  }
 
+  /* Text that is too small or too big both read badly, and photo sizes vary a lot. Read at a standard size first;
+     if the numbers don't add up (energy vs. macros) or values are missing, try a smaller and a larger size and keep the best. */
   async function readLabel(file, onProgress) {
-    const data = await recognize(file, '6', onProgress);
-    return { text: data.text, ...parseLabel(data.text) };
+    const attempt = async fit => {
+      const data = await recognize(file, '6', p => onProgress && onProgress(p * 0.7), { fit });
+      let text = data.text;
+      try { text = await refineNumbers(data, p => onProgress && onProgress(0.7 + p * 0.3)); }
+      catch (e) { console.warn('number re-read skipped', e); }
+      const parsed = parseLabel(text);
+      return { text, ...parsed, score: parsed.found + (parsed.energyOk ? 3 : 0) };
+    };
+    let best = await attempt(2000);
+    for (const fit of [1400, 2800]) {
+      if (best.found >= 5 && best.energyOk) break;
+      const r = await attempt(fit);
+      if (r.score > best.score) best = r;
+    }
+    return best;
+  }
+
+  /* Small decimal points get lost when the whole label is read at once (12.6 -> 126).
+     Re-read each number on a nutrient row on its own: crop it, enlarge it, and read it in digits-only mode.
+     Only accept the re-read when it has the same digits (so it can add a missing point, never invent digits). */
+  const digitsOf = t => (t.match(/\d/g) || []).join('');
+  function refineNumbers(data, onProgress) {
+    return queued(async () => {
+      const worker = await getWorker();
+      const lines = linesOf(data);
+      const jobs = [];
+      for (const l of lines) {
+        const lc = (l.text || '').toLowerCase();
+        if (!ROWS.some(r => r.re.test(lc))) continue;
+        for (const w of (l.words || [])) if (/\d/.test(w.text || '') && w.bbox && !/%/.test(w.text)) jobs.push({ l, w });
+      }
+      const fixes = new Map();
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789.,' });
+        for (let i = 0; i < jobs.length; i++) {
+          const { w } = jobs[i];
+          const crop = cropWord(data.canvas, w.bbox);
+          const { data: r } = await worker.recognize(crop);
+          const read = (r.text || '').trim().replace(',', '.').replace(/[^\d.]/g, '').replace(/^\.+|\.+$/g, '');
+          const orig = (w.text.match(/\d[\d.,]*/) || [''])[0];
+          if (read && /^\d+(\.\d+)?$/.test(read) && digitsOf(read) === digitsOf(orig) && read !== orig.replace(',', '.')) fixes.set(w, { orig, read });
+          if (onProgress) onProgress((i + 1) / jobs.length);
+        }
+      } finally {
+        await worker.setParameters({ tessedit_pageseg_mode: '6', tessedit_char_whitelist: '' });
+      }
+      if (!fixes.size) return data.text;
+      // rebuild the text line by line, swapping in the corrected numbers
+      return lines.map(l => {
+        let t = (l.text || '').replace(/\n$/, '');
+        for (const w of (l.words || [])) {
+          const f = fixes.get(w);
+          if (!f) continue;
+          const at = t.indexOf(w.text);
+          if (at >= 0) t = t.slice(0, at) + w.text.replace(f.orig, f.read) + t.slice(at + w.text.length);
+        }
+        return t;
+      }).join('\n');
+    });
+  }
+  function cropWord(src, b) {
+    const h = b.y1 - b.y0, pad = Math.round(h * 0.35);
+    const sx = Math.max(0, b.x0 - pad), sy = Math.max(0, b.y0 - pad);
+    const sw = Math.min(src.width - sx, b.x1 - b.x0 + 2 * pad), sh = Math.min(src.height - sy, h + 2 * pad);
+    const scale = Math.max(1, Math.min(4, 72 / Math.max(1, sh)));
+    const c = document.createElement('canvas');
+    c.width = Math.round(sw * scale) + 24; c.height = Math.round(sh * scale) + 24;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, sx, sy, sw, sh, 12, 12, sw * scale, sh * scale);
+    return c;
   }
 
   /* Front of the pack: the product name is usually the biggest text, so rank lines by letter height.
@@ -162,7 +236,7 @@
   /* ---------- parsing ---------- */
   const ROWS = [
     // order matters: more specific patterns first
-    { key: 'sugar', re: /\b(total\s*)?sugars?\b/, not: /added|free/ },
+    { key: 'sugar', re: /sugars?\b/, not: /add|ded\b|free|alcohol/ },
     { key: 'satfat', re: /saturat/ },
     { key: 'transfat', re: /\btrans\b/ },
     { key: 'fiber', re: /fib(re|er)|dietary/ },
@@ -233,7 +307,8 @@
     const notes = [];
     for (const line of lines) {
       const row = ROWS.find(r => r.re.test(line) && !(r.not && r.not.test(line)));
-      if (!row || found[row.key]) continue;
+      // keep the first match, except that a "Total sugars" line always wins over a plain "Sugars" line
+      if (!row || (found[row.key] && !(row.key === 'sugar' && /tota/.test(line) && !found.sugar.total))) continue;
       // drop the label words so "(g)" or "per 100 g" in the row name isn't read as a value
       // OCR often reads the unit "(g)" as "(9)" or "(q)"
       const body = line.replace(row.re, ' ').replace(/\(\s*(g|9|q|mg|m9|mq|kcal|kj|mcg)\s*\)/g, ' ');
@@ -254,10 +329,11 @@
       const pick = nums[Math.min(idx, nums.length - 1)];
       let v = pick.v;
       if (row.key === 'sodium' && pick.unit === 'g') v = v * 1000;
-      found[row.key] = { v, all: nums.map(n => n.v), unit: pick.unit };
+      found[row.key] = { v, all: nums.map(n => n.v), unit: pick.unit, total: /tota/.test(line) };
     }
     if (!found.sodium && found.salt) found.sodium = { v: found.salt.v * 400, all: [], unit: 'mg' };
     repairDecimals(found, cols, servingG, notes);
+    sanityRepairs(found, cols, servingG, notes);
 
     const values = {};
     ['energy', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium'].forEach(k => { if (found[k]) values[k === 'energy' ? 'kcal' : k] = round(found[k].v); });
@@ -265,9 +341,44 @@
     if (!cols.has100 && !cols.hasServing) notes.push('Couldn’t see “per 100 g” or “per serving” on the label. Check which one the numbers are for.');
     if (cols.has100 && cols.hasServing) notes.push('The label has both per-100 g and per-serving columns; the per-100 g column was used.');
     const got = Object.keys(values).length;
-    return { basis, servingG, values, notes, found: got, confidence: got >= 4 ? 'good' : got >= 2 ? 'partial' : 'low' };
+    const v = values, macroKcal = 4 * (v.protein || 0) + 4 * (v.carbs || 0) + 9 * (v.fat || 0) + 2 * (v.fiber || 0);
+    const energyOk = v.kcal > 0 && macroKcal > 0 && Math.abs(macroKcal - v.kcal) / v.kcal <= 0.15;
+    return { basis, servingG, values, notes, found: got, energyOk, confidence: got >= 4 && energyOk ? 'good' : got >= 2 ? 'partial' : 'low' };
   }
   const round = n => Math.round(n * 100) / 100;
+
+  /* Physical limits: nothing weighs more than 100 g per 100 g, sugars sit inside carbs, saturated fat inside fat,
+     and protein + carbs + fat must fit too. A value that breaks a limit almost always lost its decimal point. */
+  function sanityRepairs(found, cols, servingG, notes) {
+    const fixed = [];
+    const limit = cols.has100 || !servingG ? 100 : servingG;
+    const shrink = (k, max) => {
+      const f = found[k]; if (!f || !(f.v > max)) return;
+      for (const d of [10, 100]) if (f.v / d <= max) { f.v = f.v / d; fixed.push(k); return; }
+    };
+    ['protein', 'carbs', 'fat', 'fiber', 'sugar', 'satfat'].forEach(k => shrink(k, limit));
+    if (found.carbs) shrink('sugar', found.carbs.v);
+    if (found.fat) shrink('satfat', found.fat.v);
+    // energy check over every combination of "decimal point lost" for the main macros
+    const E = found.energy?.v, keys = ['protein', 'carbs', 'fat', 'fiber'].filter(k => found[k]);
+    const at = vals => 4 * (vals.protein || 0) + 4 * (vals.carbs || 0) + 9 * (vals.fat || 0) + 2 * (vals.fiber || 0);
+    const base = Object.fromEntries(keys.map(k => [k, found[k].v]));
+    const sum = () => (found.protein?.v || 0) + (found.carbs?.v || 0) + (found.fat?.v || 0);
+    if (E > 0 && keys.length >= 2 && (Math.abs(at(base) - E) / E > 0.15 || sum() > limit)) {
+      let best = null;
+      const n = keys.length;
+      for (let mask = 1; mask < (1 << n); mask++) {
+        const vals = { ...base };
+        let okMask = true;
+        keys.forEach((k, i) => { if (mask & (1 << i)) { if (vals[k] < 10 || vals[k] % 1) okMask = false; vals[k] /= 10; } });
+        if (!okMask) continue;
+        const err = Math.abs(at(vals) - E) / E;
+        if (err < 0.1 && (!best || err < best.err)) best = { vals, err, mask };
+      }
+      if (best) keys.forEach((k, i) => { if (best.mask & (1 << i)) { found[k].v = best.vals[k]; fixed.push(k); } });
+    }
+    if (fixed.length) notes.push(`${[...new Set(fixed)].join(', ')} looked too big (a missing decimal point) and ${fixed.length > 1 ? 'were' : 'was'} divided by 10. Double-check against the photo.`);
+  }
 
   /* OCR sometimes drops a decimal point (7.4 -> 74). Put it back when the other column or the energy proves it. */
   function repairDecimals(found, cols, servingG, notes) {

@@ -1,6 +1,6 @@
 /* Gram Tracker service worker: keeps the whole app on the phone so it runs offline.
    To ship an update: change files, bump VERSION here and in app.js + version.json (release.py does all three). */
-const VERSION = '1.2.1';
+const VERSION = '1.2.2';
 const APP_CACHE = 'gt-app-' + VERSION;
 const VENDOR_CACHE = 'gt-vendor-tesseract-5.1.1';   // large OCR files: kept across app updates
 

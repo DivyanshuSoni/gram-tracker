@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -377,7 +377,7 @@ function reopenLog(){ const saved = L; openLogSheet(); L = saved; $('#lMeal').va
 
 /* --- Food sheet: label numbers are typed (or read) exactly as printed; the app converts to per 100 g. --- */
 let F = null, ocrRun = 0;
-const LABEL_FIELDS = [['kcal', 'Energy'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)'], ['fiber', 'Fiber (g)'], ['sugar', 'Sugar (g)'], ['sodium', 'Sodium (mg)']];
+const LABEL_FIELDS = [['kcal', 'Energy'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)'], ['fiber', 'Fiber (g)'], ['sugar', 'Total sugars (g)'], ['sodium', 'Sodium (mg)']];
 function openFoodSheet(id, opts = {}){
   const f = id ? S.foods.find(x => x.id === id) : null;
   const lab = f?.label;

@@ -1,7 +1,10 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "date": "2026-10-19",
   "notes": [
-    "Test update: Settings now shows what's new in the installed version."
+    "Label reading keeps decimal points: each number is re-read on its own (12.6 no longer becomes 126).",
+    "The sugar field always takes Total sugars, never Added sugars.",
+    "Impossible values (over 100 g, sugar above carbs) are corrected and flagged.",
+    "Photos of any size are read at the best scale automatically."
   ]
 }
