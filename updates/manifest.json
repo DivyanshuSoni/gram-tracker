@@ -1,0 +1,76 @@
+{
+ "version": "1.2.0",
+ "date": "2026-10-19",
+ "notes": [
+  "Check for updates in Settings: tap Update and the app refreshes into the new version.",
+  "Only changed files are downloaded; your data stays."
+ ],
+ "minShell": 2,
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/c8aac8e2b63ac0e52f315cf32d511254b556cf15/app/",
+ "files": {
+  "app.js": {
+   "sha256": "93dad8d527dd6b82a65ce994e15ba70e2a9de94bbb9c7a9aa91889f245be93f2",
+   "size": 65073
+  },
+  "db.js": {
+   "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
+   "size": 1861
+  },
+  "icons/apple-touch-icon.png": {
+   "sha256": "658b1a9d67b8ea3502ba298a8bdd7e8b7a4b765876c2ddfbb0b5aa62a3344f97",
+   "size": 4333
+  },
+  "icons/icon-192.png": {
+   "sha256": "9c8d305d1064774c7e1798ab75ade58b1725c562f84325c006c400872ee5051d",
+   "size": 5063
+  },
+  "icons/icon-512.png": {
+   "sha256": "70438d8216b877d5eae403b4a59c3b98d7028d0267a72eeee6445276399dd4d4",
+   "size": 12485
+  },
+  "icons/maskable-512.png": {
+   "sha256": "efd6b77f357449d90a06495a36803c2fcca3aea7c2ec9bb1e9e0f940648aec3a",
+   "size": 10078
+  },
+  "index.html": {
+   "sha256": "8a4a19d964613a8b36647b7dfbc21fc81b10300679df2b7ba9f74e9d5a544d91",
+   "size": 2514
+  },
+  "label.js": {
+   "sha256": "f54b56b516b516ce7c52a992a4568088ddaa6372980c509768dbd0c2a07c17e9",
+   "size": 15782
+  },
+  "manifest.webmanifest": {
+   "sha256": "2bbaf6c47722eb60250f20a4a9e9064e290c74dc7f5bf7eb6836a3678576a46d",
+   "size": 571
+  },
+  "styles.css": {
+   "sha256": "e4f5e4c61df51d123689b084cf9e90063f9573dd48ca3c5bd6cc14b5272ec058",
+   "size": 17850
+  },
+  "sw.js": {
+   "sha256": "eb06e608f39b32780fd38b52ef98d757f38e8fa7d5bfae88d385b586eb43a683",
+   "size": 2403
+  },
+  "vendor/core/tesseract-core-lstm.wasm.js": {
+   "sha256": "8f04aa0cc81e7bde33f80e92fa01a7a665f0b4884d098acf5de9c7104a11dfaa",
+   "size": 3938277
+  },
+  "vendor/core/tesseract-core-simd-lstm.wasm.js": {
+   "sha256": "ce20eda9533cbed1e6c2b4276fbae1e0adc61b6754b5513084be601787b457cf",
+   "size": 3938657
+  },
+  "vendor/tesseract.min.js": {
+   "sha256": "a8e29918d098b2b06e1012bdaeffb4aec0445c5d5654709023e0bd1f442a80e8",
+   "size": 66695
+  },
+  "vendor/worker.min.js": {
+   "sha256": "aca1229639fc9907d86f96e825955a2b7c5716d17f3bc3acd71f9c7ab66181fc",
+   "size": 123724
+  },
+  "version.json": {
+   "sha256": "8df9d930e66cc1d2cfe4a7d65c0f94d81a5de12b25590e5d300ce733bff70f41",
+   "size": 226
+  }
+ }
+}
