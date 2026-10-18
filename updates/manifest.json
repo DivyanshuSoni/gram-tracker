@@ -1,16 +1,15 @@
 {
- "version": "1.2.0",
+ "version": "1.2.1",
  "date": "2026-10-19",
  "notes": [
-  "Check for updates in Settings: tap Update and the app refreshes into the new version.",
-  "Only changed files are downloaded; your data stays."
+  "Test update: Settings now shows what's new in the installed version."
  ],
  "minShell": 2,
- "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/c8aac8e2b63ac0e52f315cf32d511254b556cf15/app/",
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/314c46167df7292fa3aef60dbeeb171273a0e437/app/",
  "files": {
   "app.js": {
-   "sha256": "93dad8d527dd6b82a65ce994e15ba70e2a9de94bbb9c7a9aa91889f245be93f2",
-   "size": 65073
+   "sha256": "37c4b39bf333404c7584ca5165b31f212ce4375f00dd3ede1b141c474f4866b0",
+   "size": 66439
   },
   "db.js": {
    "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
@@ -49,7 +48,7 @@
    "size": 17850
   },
   "sw.js": {
-   "sha256": "eb06e608f39b32780fd38b52ef98d757f38e8fa7d5bfae88d385b586eb43a683",
+   "sha256": "e75b0f738fbb9ee699b469015a998fb59c61e674563532334d7b608ca8ace5a6",
    "size": 2403
   },
   "vendor/core/tesseract-core-lstm.wasm.js": {
@@ -69,8 +68,8 @@
    "size": 123724
   },
   "version.json": {
-   "sha256": "8df9d930e66cc1d2cfe4a7d65c0f94d81a5de12b25590e5d300ce733bff70f41",
-   "size": 226
+   "sha256": "510488702dbde10001c5a28f4b28e1ba6e5e697488f647a52372d6235f92513b",
+   "size": 149
   }
  }
 }
