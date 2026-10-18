@@ -1,15 +1,18 @@
 {
- "version": "1.2.1",
+ "version": "1.2.2",
  "date": "2026-10-19",
  "notes": [
-  "Test update: Settings now shows what's new in the installed version."
+  "Label reading keeps decimal points: each number is re-read on its own (12.6 no longer becomes 126).",
+  "The sugar field always takes Total sugars, never Added sugars.",
+  "Impossible values (over 100 g, sugar above carbs) are corrected and flagged.",
+  "Photos of any size are read at the best scale automatically."
  ],
  "minShell": 2,
- "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/314c46167df7292fa3aef60dbeeb171273a0e437/app/",
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/3e617808285b5836b770736f57f859d7b5d41d26/app/",
  "files": {
   "app.js": {
-   "sha256": "37c4b39bf333404c7584ca5165b31f212ce4375f00dd3ede1b141c474f4866b0",
-   "size": 66439
+   "sha256": "471721e2ee020ecf5b98f3abd4fedc23294551293a863bb40d251ccb64168b74",
+   "size": 66446
   },
   "db.js": {
    "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
@@ -36,8 +39,8 @@
    "size": 2514
   },
   "label.js": {
-   "sha256": "f54b56b516b516ce7c52a992a4568088ddaa6372980c509768dbd0c2a07c17e9",
-   "size": 15782
+   "sha256": "1d2df671dc2c1b22868b0c82399463460041826eafbfdef59bf315b51c2c6b65",
+   "size": 22587
   },
   "manifest.webmanifest": {
    "sha256": "2bbaf6c47722eb60250f20a4a9e9064e290c74dc7f5bf7eb6836a3678576a46d",
@@ -48,7 +51,7 @@
    "size": 17850
   },
   "sw.js": {
-   "sha256": "e75b0f738fbb9ee699b469015a998fb59c61e674563532334d7b608ca8ace5a6",
+   "sha256": "44d89410690ac84f8c0fc98fb84ac84d6903769fe197522b024963cfbd42c097",
    "size": 2403
   },
   "vendor/core/tesseract-core-lstm.wasm.js": {
@@ -68,8 +71,8 @@
    "size": 123724
   },
   "version.json": {
-   "sha256": "510488702dbde10001c5a28f4b28e1ba6e5e697488f647a52372d6235f92513b",
-   "size": 149
+   "sha256": "38439f14e15aa202855fe64e2c10808fe3b6c9d7af594197f4f80314f96d2981",
+   "size": 405
   }
  }
 }
