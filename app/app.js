@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.3.0';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -381,12 +381,16 @@ const LABEL_FIELDS = [['kcal', 'Energy'], ['protein', 'Protein (g)'], ['carbs', 
 function openFoodSheet(id, opts = {}){
   const f = id ? S.foods.find(x => x.id === id) : null;
   const lab = f?.label;
-  F = {id: f?.id || uid(), isNew: !f, returnTo: opts.returnTo || null, basis: lab?.basis || '100', unit: lab?.unit || 'kcal', source: f?.source || 'manual', photo: f?.photo || null, picks: [], candidates: []};
+  F = {id: f?.id || uid(), isNew: !f, returnTo: opts.returnTo || null, basis: lab?.basis || '100', unit: lab?.unit || 'kcal', source: f?.source || 'manual', photo: f?.photo || null, picks: [], candidates: [], link: f?.link || opts.link || ''};
   const vals = lab?.values || (f ? per100Of(f) : {});
   currentSheet = 'food';
   const v = k => esc(vals[k] ?? '');
   openSheet(f ? 'Edit food' : 'New food', `
     <div class="card section-gap">
+      <label class="f linklbl" for="fLink">Product link <span class="tag">needs internet</span></label>
+      <div class="linkrow"><input class="inp" id="fLink" type="url" inputmode="url" value="${esc(F.link)}" placeholder="Paste a Blinkit, Zepto or shop link"><button type="button" class="btn" id="fLinkGo">Get details</button></div>
+      <p class="hint">Most accurate option: fills the name, nutrition per 100 g, serving and pack size, and uses the shop\u2019s photo as the icon. Tip: in the shop app, tap Share and pick Gram Tracker.${F.link ? ` <a href="${esc(F.link)}" target="_blank" rel="noopener">Open product page</a>` : ''}</p>
+      <hr class="divider">
       <div class="prod-row"><span id="fIcon">${iconHtml({name: f?.name || opts.name, photo: F.photo}, 'lg')}</span>
         <div class="section-gap" style="flex:1;min-width:0;gap:6px">
           <span class="btn filebtn" style="justify-self:start">Photo of product<input type="file" id="fProd" accept="image/*" aria-label="Photo of the product"></span>
@@ -423,6 +427,8 @@ function openFoodSheet(id, opts = {}){
     <p class="warn" id="fErr" hidden></p>
     <div class="sheet-foot">${f ? `<button class="btn danger" id="fDel">Delete</button>` : '<span></span>'}<button class="btn primary" id="fSave">${f ? 'Save changes' : 'Save food'}</button></div>`);
   $('#fFile').onchange = e => { const file = e.target.files[0]; e.target.value = ''; if (file) onLabelPhoto(file); };
+  $('#fLinkGo').onclick = onProductLink;
+  $('#fLink').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); onProductLink(); } });
   $('#fProd').onchange = e => { const file = e.target.files[0]; e.target.value = ''; if (file) onProductPhoto(file); };
   $('#fNoPhoto').onclick = () => { F.photo = null; drawFoodIcon(); };
   $('#f_name').addEventListener('input', () => { F.picks = []; drawNameChips(); drawFoodIcon(); });
@@ -433,6 +439,7 @@ function openFoodSheet(id, opts = {}){
   if ($('#fDel')) armButton($('#fDel'), async () => { await removeDoc('foods', F.id); closeSheet(); toast('Food deleted'); });
   updateFoodCalc();
   if (opts.scan) setTimeout(() => $('#fFile').click(), 60);
+  else if (opts.link && opts.autoLink) setTimeout(onProductLink, 60);
   else LabelReader.warm().catch(() => {});
 }
 function setBasis(b){
@@ -514,6 +521,52 @@ function drawNameChips(){
     drawNameChips(); drawFoodIcon();
   });
 }
+/* Product link: the Android app downloads the shop page; link.js reads the per-100 g data and photo. */
+async function onProductLink(){
+  const input = $('#fLink'), url = ProductLink.findUrl(input.value);
+  if (!url) { setStatus('#fStatus', 'Paste a full web link, starting with https://', true); input.focus(); return; }
+  input.value = url;
+  if (!ProductLink.available()) { setStatus('#fStatus', 'Product links work in the Gram Tracker Android app (version 1.3.0 or newer).', true); return; }
+  if (!ProductLink.online()) { showNoInternet(); return; }
+  const run = ++ocrRun, btn = $('#fLinkGo');
+  btn.disabled = true;
+  const bar = $('#fProg'); bar.hidden = false; bar.classList.add('busy');
+  setStatus('#fStatus', 'Getting product details\u2026');
+  let res;
+  try { res = await ProductLink.importLink(url); }
+  catch (e) { console.error(e); res = {ok: false, reason: 'failed'}; }
+  if (run !== ocrRun) return;
+  btn.disabled = false; bar.hidden = true; bar.classList.remove('busy');
+  if (!res.ok) {
+    if (res.reason === 'offline') { setStatus('#fStatus', ''); showNoInternet(); }
+    else setStatus('#fStatus', `Couldn\u2019t open that page${res.detail ? ' (' + esc(res.detail) + ')' : ''}. Check the link, or use a label photo instead.`, true);
+    return;
+  }
+  const d = res.data, got = LABEL_FIELDS.filter(([k]) => d.values[k] != null).length;
+  F.link = url; F.source = 'link';
+  if (d.name && (!$('#f_name').value.trim() || F.picks.length)) { $('#f_name').value = d.name; F.picks = []; F.candidates = []; drawNameChips(); }
+  if (got) {
+    setBasis('100'); $('#f_unit').value = 'kcal'; F.unit = 'kcal';
+    LABEL_FIELDS.forEach(([k]) => { $('#f_' + k).value = d.values[k] != null ? d.values[k] : ''; });
+  }
+  if (d.servingG) { $('#f_servingG').value = r1(d.servingG); if (!$('#f_servingLabel').value.trim()) $('#f_servingLabel').value = '1 serve'; }
+  if (d.packG) $('#f_packG').value = r0(d.packG);
+  if (d.imageBlob) { try { F.photo = await makeThumb(d.imageBlob); } catch (e) { console.warn(e); } }
+  drawFoodIcon(); updateFoodCalc();
+  const extras = [d.servingG ? `serving ${r1(d.servingG)} g` : '', d.packG ? `pack ${r0(d.packG)} g` : '', d.imageBlob ? 'photo' : ''].filter(Boolean);
+  if (got) setStatus('#fStatus', `Filled from ${esc(d.host || 'the shop page')}: ${got} value${got > 1 ? 's' : ''} per 100 g${extras.length ? ', ' + extras.join(', ') : ''}. Check against the pack before saving.`);
+  else setStatus('#fStatus', `That page had no nutrition table${d.name ? ', so only the name' + (d.imageBlob ? ' and photo were' : ' was') + ' filled' : ''}. Add the values from a label photo.`, true);
+}
+
+/* Popup when something needs the internet and there is none. */
+function showPopup(title, text){
+  $('#popupTitle').textContent = title; $('#popupText').textContent = text;
+  $('#popup').hidden = false; $('#popupOk').focus();
+}
+function showNoInternet(){
+  showPopup('No internet connection', 'Product links need the internet to read the shop\u2019s page. Connect to Wi-Fi or mobile data and try again. Everything else in Gram Tracker works offline.');
+}
+
 async function onProductPhoto(file){
   const run = ++ocrRun;
   try { F.photo = await makeThumb(file); drawFoodIcon(); } catch (e) { console.error(e); toast('Couldn\u2019t open that photo.'); return; }
@@ -545,7 +598,7 @@ async function saveFood(){
     kcal: r1(per100.kcal), protein: r1(per100.protein), carbs: r1(per100.carbs), fat: r1(per100.fat), fiber: r1(per100.fiber),
     sugar: per100.sugar == null ? null : r1(per100.sugar), sodium: per100.sodium == null ? null : r0(per100.sodium),
     servingG: num($('#f_servingG').value), servingLabel: $('#f_servingLabel').value.trim(), packG: num($('#f_packG').value),
-    label: {basis: F.basis, unit: F.unit, values: printed}, source: F.source, photo: F.photo};
+    label: {basis: F.basis, unit: F.unit, values: printed}, source: F.source, photo: F.photo, link: F.link || null};
   const back = F.returnTo, isNew = F.isNew;
   await saveDoc('foods', food);
   toast(`${isNew ? 'Saved' : 'Updated'}: ${r0(food.kcal)} kcal per 100 g`);
@@ -840,6 +893,7 @@ document.addEventListener('click', e => {
   if (t.dataset.tab) { S.view = t.dataset.tab; renderAll(); window.scrollTo(0, 0); return; }
   const a = t.dataset.act, id = t.dataset.id;
   if (a === 'close') closeSheet();
+  else if (a === 'popup-ok') $('#popup').hidden = true;
   else if (a === 'log') openLogSheet();
   else if (a === 'day') { const n = addDays(S.date, +t.dataset.d); if (n <= todayStr()) { S.date = n; renderToday(); } }
   else if (a === 'delentry') {
@@ -870,6 +924,7 @@ document.addEventListener('click', e => {
   else if (a === 'restore-no') { pendingRestore = null; renderSettings(); }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#popup').hidden) { $('#popup').hidden = true; return; }
   if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet();
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.item.clickable')) { e.preventDefault(); e.target.click(); }
 });
@@ -880,6 +935,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && S.
 
 /* Android back button: close a sheet first, then return to Today, else let Android close the app. */
 window.gtBack = () => {
+  if (!$('#popup').hidden) { $('#popup').hidden = true; return true; }
   if (!$('#sheet').hidden) { closeSheet(); return true; }
   if (S.view !== 'today') { S.view = 'today'; renderAll(); window.scrollTo(0, 0); return true; }
   return false;
@@ -889,4 +945,12 @@ window.gtBack = () => {
 let WHATS_NEW = [];
 fetch('version.json').then(r => r.json()).then(v => { WHATS_NEW = v.notes || []; if (S.view === 'settings') renderSettings(); }).catch(() => {});
 
-load().then(setupSW);
+/* A link shared into the app (Share > Gram Tracker) opens a new food and fetches it. */
+window.gtShared = () => {
+  const url = window.GramNet ? GramNet.takeShared() : '';
+  if (!url || !S.ready) return;
+  S.view = 'foods'; renderAll();
+  openFoodSheet(null, {link: url, autoLink: true});
+};
+
+load().then(setupSW).then(() => window.gtShared());

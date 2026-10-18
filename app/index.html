@@ -44,11 +44,18 @@
     <div class="sheet-body" id="sheetBody"></div>
   </div>
 </div>
+<div class="popup" id="popup" hidden>
+  <div class="popup-card" role="alertdialog" aria-modal="true" aria-labelledby="popupTitle" aria-describedby="popupText">
+    <h2 id="popupTitle"></h2><p id="popupText"></p>
+    <button class="btn primary" id="popupOk" data-act="popup-ok">OK</button>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="vendor/tesseract.min.js"></script>
 <script src="db.js"></script>
 <script src="label.js"></script>
+<script src="link.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

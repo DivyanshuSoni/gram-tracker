@@ -47,7 +47,7 @@ import java.util.concurrent.Executors;
  */
 public class LiveUpdater {
     /** Bump only when the Java shell changes in a way new web files depend on (then a new APK is needed). */
-    public static final int SHELL_VERSION = 2;
+    public static final int SHELL_VERSION = 3;
     private static final String[] ALLOWED_HOSTS = {"api.github.com", "raw.githubusercontent.com"};
     private static final long BOOT_TIMEOUT_MS = 15000;
 

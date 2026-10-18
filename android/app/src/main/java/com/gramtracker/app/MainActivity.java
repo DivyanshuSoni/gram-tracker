@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private LiveUpdater updater;
+    private ProductFetcher net;
     private ValueCallback<Uri[]> fileCallback;
     private Uri cameraUri;
 
@@ -83,9 +84,24 @@ public class MainActivity extends Activity {
 
         web.addJavascriptInterface(new Bridge(), "GramAndroid");
         web.addJavascriptInterface(updater, "GramUpdater");
+        // Product links: fetch shop pages/photos for the web app, and accept links shared from other apps
+        net = new ProductFetcher(this, web);
+        web.addJavascriptInterface(net, "GramNet");
+        handleShare(getIntent());
 
         if (saved != null) web.restoreState(saved);
         else web.loadUrl(START);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleShare(intent);
+    }
+
+    private void handleShare(Intent intent) {
+        if (intent != null && Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType()))
+            net.onShared(intent.getStringExtra(Intent.EXTRA_TEXT));
     }
 
     /** Photo inputs offer the camera plus the gallery; other inputs (backup restore) open the file picker. */
