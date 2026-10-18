@@ -1,18 +1,15 @@
 {
- "version": "1.4.1",
+ "version": "1.4.2",
  "date": "2026-10-19",
  "notes": [
-  "Labels with per-100 g and per-serving columns are read correctly: columns are found by position, and the %RDA column is ignored.",
-  "The 100 g / One serving switch now shows each column's own numbers from the label.",
-  "White text on coloured table rows (like green stripes) is now read.",
-  "Lost decimal points are put back by checking both columns and the energy against each other."
+  "Roomier energy field in the food form: the number and the kcal/kJ picker no longer squeeze each other."
  ],
  "minShell": 2,
- "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/f3f98e2d7fe92dd2b90a3a63dc2d5a47d5a1cea4/app/",
+ "base": "https://raw.githubusercontent.com/DivyanshuSoni/gram-tracker/f68c0cf3ef7555c6261ea2d79d51009d85c1f06d/app/",
  "files": {
   "app.js": {
-   "sha256": "822c99ff40836102fa25f35514c861b2cfe8ac4446c65a71ff906bfdc5c3f4db",
-   "size": 78316
+   "sha256": "26ea145478392cbc87cf31a933c354bfeb5b1e6c8ed11d6ca21d92a90c0a4fb4",
+   "size": 78323
   },
   "db.js": {
    "sha256": "ceb706ad4080be6e9709e94a33df3e817ab151ff66e258d13d017594aafde02f",
@@ -51,11 +48,11 @@
    "size": 571
   },
   "styles.css": {
-   "sha256": "85481891451c63e541481e89aba1efc097b58a4c1a7803a338d6b3259f059701",
-   "size": 18874
+   "sha256": "89eda759ec68aa6c3c597bd2d0b2de2150acb7e65e70a9c306b2314204175558",
+   "size": 19079
   },
   "sw.js": {
-   "sha256": "40f1dd0e60d8dd49a98c6217cbdbf78a10fefc28e54dd8002a053dd43acd54a0",
+   "sha256": "2b1df8421e535c4dfb701bc0d3b1fbba6f88bf480eca3e6ff448e897db17cf03",
    "size": 2414
   },
   "vendor/core/tesseract-core-lstm.wasm.js": {
@@ -75,8 +72,8 @@
    "size": 123724
   },
   "version.json": {
-   "sha256": "98031a2076ee2b81d343b464ada538c6992744ff7dc81c3dd8dc0d513d6a1437",
-   "size": 477
+   "sha256": "a829d40f629e387320a50e894e0cb4501212d1881b1f60243dccf9f417f628d9",
+   "size": 183
   }
  },
  "apk": {
