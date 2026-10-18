@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -815,6 +815,7 @@ function renderSettings(){
 
     <div class="set-sec"><h3>App updates</h3><div class="card">
       <div class="kv"><span>Installed version</span><b>${APP_VERSION}</b></div>
+      ${WHATS_NEW.length ? `<details class="raw"><summary>What’s new in ${APP_VERSION}</summary><ul class="notes" style="margin-top:6px">${WHATS_NEW.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
       <div class="kv"><span>Works offline</span><span class="${u.offlineReady ? 'ok' : 'muted'}">${u.offlineReady ? 'Yes, everything is on this phone' : u.state === 'insecure' ? 'No (http link)' : 'Setting up…'}</span></div>
       ${upd}</div></div>
 
@@ -883,5 +884,9 @@ window.gtBack = () => {
   if (S.view !== 'today') { S.view = 'today'; renderAll(); window.scrollTo(0, 0); return true; }
   return false;
 };
+
+/* Release notes of the installed version, read from the app's own files (works offline). */
+let WHATS_NEW = [];
+fetch('version.json').then(r => r.json()).then(v => { WHATS_NEW = v.notes || []; if (S.view === 'settings') renderSettings(); }).catch(() => {});
 
 load().then(setupSW);

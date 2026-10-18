@@ -1,8 +1,7 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "date": "2026-10-19",
   "notes": [
-    "Check for updates in Settings: tap Update and the app refreshes into the new version.",
-    "Only changed files are downloaded; your data stays."
+    "Test update: Settings now shows what's new in the installed version."
   ]
 }
