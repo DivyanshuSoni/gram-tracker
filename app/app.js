@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.4.2';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -418,7 +418,7 @@ function openFoodSheet(id, opts = {}){
     </div>
     <div class="fields three">
       ${LABEL_FIELDS.map(([k, label]) => k === 'kcal'
-        ? `<label class="f">${label}<span class="unit-row"><input class="num" id="f_kcal" inputmode="decimal" value="${v('kcal')}"><select id="f_unit" aria-label="Energy unit"><option value="kcal" ${F.unit === 'kcal' ? 'selected' : ''}>kcal</option><option value="kj" ${F.unit === 'kj' ? 'selected' : ''}>kJ</option></select></span></label>`
+        ? `<label class="f energy">${label}<span class="unit-row"><input class="num" id="f_kcal" inputmode="decimal" value="${v('kcal')}"><select id="f_unit" aria-label="Energy unit"><option value="kcal" ${F.unit === 'kcal' ? 'selected' : ''}>kcal</option><option value="kj" ${F.unit === 'kj' ? 'selected' : ''}>kJ</option></select></span></label>`
         : `<label class="f">${label}<input class="num" id="f_${k}" inputmode="decimal" value="${v(k)}"></label>`).join('')}
       <label class="f">Pack size (g)<input class="num" id="f_packG" inputmode="decimal" value="${esc(f?.packG ?? '')}" placeholder="optional"></label>
     </div>

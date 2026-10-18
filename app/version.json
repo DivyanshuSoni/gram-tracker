@@ -1,10 +1,7 @@
 {
-  "version": "1.4.1",
+  "version": "1.4.2",
   "date": "2026-10-19",
   "notes": [
-    "Labels with per-100 g and per-serving columns are read correctly: columns are found by position, and the %RDA column is ignored.",
-    "The 100 g / One serving switch now shows each column's own numbers from the label.",
-    "White text on coloured table rows (like green stripes) is now read.",
-    "Lost decimal points are put back by checking both columns and the energy against each other."
+    "Roomier energy field in the food form: the number and the kcal/kJ picker no longer squeeze each other."
   ]
 }

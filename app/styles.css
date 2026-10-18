@@ -256,3 +256,7 @@ label.f .unit-row select{flex:none;width:4.6em;padding:0 4px}
 .linklbl{display:flex;align-items:center;gap:8px}
 .adding{display:grid;gap:12px;padding-block:18px}
 .added{display:flex;gap:14px;align-items:center}
+/* energy: number + unit side by side need room (two columns of the grid) */
+.fields .f.energy{grid-column:span 2}
+.unit-row{gap:8px}
+label.f .unit-row select{width:auto;min-width:5.2em;padding:0 8px}
