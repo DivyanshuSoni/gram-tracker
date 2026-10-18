@@ -254,3 +254,5 @@ label.f .unit-row select{flex:none;width:4.6em;padding:0 4px}
 .popup-card p{margin:0;color:var(--muted);font-size:.92rem}
 .popup-card .btn{justify-self:end}
 .linklbl{display:flex;align-items:center;gap:8px}
+.adding{display:grid;gap:12px;padding-block:18px}
+.added{display:flex;gap:14px;align-items:center}

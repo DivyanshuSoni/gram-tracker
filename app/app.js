@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -131,7 +131,7 @@ function renderAll(){
   $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === S.view)));
   ['today', 'foods', 'bowls', 'settings'].forEach(v => $('#view-' + v).hidden = v !== S.view);
   $('#fab').hidden = S.view === 'settings' || !S.ready;
-  $('#updBadge').hidden = !(UPD.state === 'available' || UPD.state === 'ready');
+  $('#updBadge').hidden = !['available', 'ready', 'app-available', 'app-ready'].includes(UPD.state);
   if (!S.ready) return;
   if (S.view === 'today') renderToday();
   if (S.view === 'foods') renderFoods();
@@ -754,6 +754,7 @@ function apkCheck(silent){
   if (!silent) { UPD.state = 'checking'; UPD.msg = ''; renderAll(); }
   GramUpdater.checkUpdate(UPDATE_MANIFEST);
 }
+function appDownload(){ UPD.state = 'downloading'; UPD.done = 0; UPD.total = UPD.remote?.bytes || 0; UPD.msg = ''; renderAll(); GramUpdater.downloadApp(); }
 function apkDownload(){ UPD.state = 'downloading'; UPD.done = 0; UPD.total = UPD.remote?.bytes || 0; renderAll(); GramUpdater.downloadUpdate(); }
 const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 window.gtNative = m => {
@@ -762,6 +763,10 @@ window.gtNative = m => {
   else if (m.state === 'latest') { UPD.state = silent ? 'idle' : 'latest'; apkSilent = false; }
   else if (m.state === 'available') { UPD.state = 'available'; UPD.remote = {version: m.version, notes: m.notes || [], bytes: m.bytes || 0}; UPD.msg = ''; apkSilent = false; }
   else if (m.state === 'needs-app') { UPD.state = 'needs-app'; UPD.remote = {version: m.version}; apkSilent = false; }
+  else if (m.state === 'app-available') { UPD.state = 'app-available'; UPD.remote = {version: m.version, notes: m.notes || [], bytes: m.bytes || 0, app: true}; UPD.msg = ''; apkSilent = false; }
+  else if (m.state === 'app-ready') { UPD.state = 'app-ready'; renderAll(); GramUpdater.installApp(); return; }
+  else if (m.state === 'needs-permission') { UPD.state = 'needs-permission'; }
+  else if (m.state === 'installing') { UPD.state = 'app-ready'; UPD.msg = ''; }
   else if (m.state === 'error') { UPD.state = silent ? 'idle' : 'error'; UPD.msg = m.message || ''; apkSilent = false; }
   else if (m.state === 'downloading') {
     UPD.state = 'downloading'; UPD.done = m.done; UPD.total = m.total;
@@ -850,6 +855,11 @@ function renderSettings(){
     upd = `<p class="hint" id="updTxt">Downloading ${kb(u.done || 0)} of ${kb(u.total || 0)}\u2026</p><div class="progress" id="updBar"><i style="width:${pct.toFixed(0)}%"></i></div>`; }
   else if (IS_APK && u.state === 'applying') upd = `<p class="hint">Installing\u2026 the app will refresh in a moment.</p><div class="progress"><i style="width:100%"></i></div>`;
   else if (IS_APK && u.state === 'needs-app') upd = `<p class="hint">Version ${esc(remote?.version || '')} needs a new app file. Ask Claude for the latest APK and install it once; after that, updates work from here again.</p>`;
+  else if (IS_APK && u.state === 'app-available') upd = `<div class="kv"><span>New app version</span><b>${esc(remote.version)}</b></div>${(remote.notes || []).length ? `<ul class="notes">${remote.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    <p class="hint">This update changes the Android part of the app, so Android will ask you to confirm the install. Your data stays.</p>
+    <button class="btn primary" data-act="upd-app">Download and install${remote.bytes ? ` (${kb(remote.bytes)})` : ''}</button>`;
+  else if (IS_APK && u.state === 'app-ready') upd = `<p class="hint">Tap <b>Update</b> in Android\u2019s box. Gram Tracker closes while it installs; open it again afterwards.</p><button class="btn primary" data-act="upd-app-install">Install</button>`;
+  else if (IS_APK && u.state === 'needs-permission') upd = `<p class="hint">Android needs your OK once: turn on <b>Allow from this source</b> for Gram Tracker, come back, then tap Install.</p><button class="btn primary" data-act="upd-app-install">Install</button>`;
   else if (u.state === 'insecure' || u.state === 'unsupported') upd = `<p class="hint">Offline mode and updates need the app to be opened from its https:// address. Right now it’s opened from a plain http:// link, so it won’t work without your PC.</p>`;
   else if (u.state === 'available') upd = `<div class="kv"><span>New version</span><b>${esc(remote.version)}</b></div>${(remote.notes || []).length ? `<ul class="notes">${remote.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}<button class="btn primary" data-act="upd-download">Download update</button>`;
   else if (u.state === 'downloading') upd = `<p class="hint">Downloading the update… keep the app open.</p><div class="progress"><i style="width:60%"></i></div>`;
@@ -918,6 +928,8 @@ document.addEventListener('click', e => {
   else if (a === 'upd-check') IS_APK ? apkCheck(false) : checkUpdates(false);
   else if (a === 'upd-download') IS_APK ? apkDownload() : downloadUpdate();
   else if (a === 'upd-install') installUpdate();
+  else if (a === 'upd-app') appDownload();
+  else if (a === 'upd-app-install') GramUpdater.installApp();
   else if (a === 'backup') exportBackup();
   else if (a === 'csv') exportCsv();
   else if (a === 'restore-yes') applyRestore();
@@ -950,7 +962,63 @@ window.gtShared = () => {
   const url = window.GramNet ? GramNet.takeShared() : '';
   if (!url || !S.ready) return;
   S.view = 'foods'; renderAll();
-  openFoodSheet(null, {link: url, autoLink: true});
+  addSharedProduct(url);
 };
+
+/* Data from a shop is complete enough to save without a look: energy, protein, carbs and fat, and they add up. */
+function linkDataComplete(v){
+  if (!['kcal', 'protein', 'carbs', 'fat'].every(k => v[k] != null)) return false;
+  const est = 4 * v.protein + 4 * v.carbs + 9 * v.fat + 2 * (v.fiber || 0);
+  return v.kcal > 0 && Math.abs(est - v.kcal) / v.kcal <= 0.2 && v.protein + v.carbs + v.fat <= 101;
+}
+async function addSharedProduct(url){
+  if (!ProductLink.online()) { showNoInternet(); openFoodSheet(null, {link: url}); return; }
+  currentSheet = 'adding';
+  openSheet('Adding product', `<div class="adding"><div class="progress busy"><i></i></div><p class="hint">Getting the details from ${esc((url.match(/\/\/([^/]+)/) || [])[1] || 'the shop')}\u2026</p></div>`);
+  let res;
+  try { res = await ProductLink.importLink(url); } catch (e) { console.error(e); res = {ok: false, reason: 'failed'}; }
+  if (currentSheet !== 'adding') return;            // closed while loading
+  if (!res.ok) {
+    if (res.reason === 'offline') { showNoInternet(); openFoodSheet(null, {link: url}); }
+    else { openFoodSheet(null, {link: url}); setStatus('#fStatus', `Couldn\u2019t open that page${res.detail ? ' (' + esc(res.detail) + ')' : ''}. Try again, or use a label photo.`, true); }
+    return;
+  }
+  const d = res.data;
+  if (!linkDataComplete(d.values)) {                // something is missing: let the person check it
+    openFoodSheet(null, {link: url, autoLink: true});
+    return;
+  }
+  let photo = null;
+  if (d.imageBlob) { try { photo = await makeThumb(d.imageBlob); } catch (e) { console.warn(e); } }
+  const existing = S.foods.find(f => f.link === url);
+  const v = d.values;
+  const food = {id: existing?.id || uid(), name: d.name || existing?.name || 'Shop product', brand: existing?.brand || '',
+    kcal: r1(v.kcal), protein: r1(v.protein), carbs: r1(v.carbs), fat: r1(v.fat), fiber: r1(v.fiber || 0),
+    sugar: v.sugar == null ? null : r1(v.sugar), sodium: v.sodium == null ? null : r0(v.sodium),
+    servingG: d.servingG || existing?.servingG || null, servingLabel: d.servingG ? (existing?.servingLabel || '1 serve') : (existing?.servingLabel || ''),
+    packG: d.packG || existing?.packG || null,
+    label: {basis: '100', unit: 'kcal', values: {kcal: v.kcal, protein: v.protein, carbs: v.carbs, fat: v.fat, fiber: v.fiber ?? null, sugar: v.sugar ?? null, sodium: v.sodium ?? null}},
+    source: 'link', photo: photo || existing?.photo || null, link: url};
+  await saveDoc('foods', food);
+  showAdded(food, !!existing, d.host);
+}
+/* Confirmation after an automatic add, with the next likely step. */
+function showAdded(food, updated, host){
+  currentSheet = 'added';
+  const p = per100Of(food);
+  openSheet(updated ? 'Product updated' : 'Added to your foods', `
+    <div class="added">${iconHtml(food, 'lg')}
+      <div style="min-width:0"><div class="nm" style="font-weight:700">${esc(food.name)}</div>
+        <div class="hint">From ${esc(host || 'the shop')}${food.packG ? ` \u00b7 pack ${r0(food.packG)} g` : ''}${food.servingG ? ` \u00b7 serving ${r1(food.servingG)} g` : ''}</div></div></div>
+    <div class="lcd">${lcd([{label: 'Energy', v: r0(p.kcal), u: 'kcal', big: 1}, {label: 'Protein', v: r1(p.protein), u: 'g'}, {label: 'Carbs', v: r1(p.carbs), u: 'g'}, {label: 'Fat', v: r1(p.fat), u: 'g'}, {label: 'Per', v: '100', u: 'g'}])}</div>
+    <p class="hint">${updated ? 'You already had this product, so its values and photo were refreshed.' : 'Saved with the shop\u2019s values per 100 g.'} Compare with the pack if you like.</p>
+    <div class="row-actions"><button class="btn primary" id="aLog">Log it now</button><button class="btn" id="aEdit">Edit</button><button class="btn ghost" data-act="close">Done</button></div>`);
+  $('#aLog').onclick = () => {
+    openLogSheet();
+    const item = allItems().find(i => i.id === food.id);
+    if (item) { L.rows.push({key: uid(), item, reading: '', grams: ''}); drawLogRows(true); }
+  };
+  $('#aEdit').onclick = () => openFoodSheet(food.id);
+}
 
 load().then(setupSW).then(() => window.gtShared());

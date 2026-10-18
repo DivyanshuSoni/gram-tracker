@@ -1,9 +1,8 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "date": "2026-10-19",
   "notes": [
-    "Add a food from a product link (Blinkit and similar shops): name, nutrition per 100 g, serving, pack size and the shop's photo as the icon.",
-    "Share a product from the shop app to Gram Tracker to add it.",
-    "A popup tells you when there is no internet. Everything else still works offline."
+    "Share a product from Blinkit to Gram Tracker and it is added automatically (sharing it again refreshes it).",
+    "App updates that change the Android part now download inside the app and open Android's install box."
   ]
 }

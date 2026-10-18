@@ -4,11 +4,16 @@ Usual flow for an update:
     python release.py 1.2.1 "What changed"      # bump the version + release notes
     python publish.py                            # push files, then the update manifest
 
+When the Android part changed (new SHELL_VERSION in LiveUpdater.java):
+    androiduild-apk.cmd                        # builds GramTracker-<version>.apk
+    python publish.py --apk                      # also uploads the APK to a GitHub release;
+                                                 # phones then offer "Download and install"
+
 How it works: the files are pushed first; the manifest then points at that exact commit
 (raw.githubusercontent.com/<owner>/<repo>/<commit>/app/...), so phones never mix old and new files
 and every file is checked against its SHA-256 before the app switches over.
 """
-import hashlib, json, pathlib, re, subprocess, sys
+import hashlib, json, pathlib, re, subprocess, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).parent
 APP = ROOT / "app"
@@ -32,6 +37,42 @@ def owner_repo():
     return m.group(1), m.group(2)
 
 
+def github_token():
+    """The GitHub sign-in Git Credential Manager already keeps on this PC (never printed)."""
+    r = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+                       text=True, capture_output=True, cwd=ROOT)
+    m = re.search(r"^password=(.+)$", r.stdout, re.M)
+    if not m:
+        sys.exit("No GitHub sign-in found. Run a git push once to sign in.")
+    return m.group(1).strip()
+
+
+def gh_api(method, url, token, data=None, content_type="application/json"):
+    body = data if isinstance(data, (bytes, type(None))) else json.dumps(data).encode()
+    req = urllib.request.Request(url, data=body, method=method, headers={
+        "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+        "User-Agent": "gram-tracker-publish", "Content-Type": content_type})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def upload_apk(owner, repo, version, notes):
+    """Create release v<version> with the APK attached; returns the manifest's "apk" entry."""
+    apk = ROOT / f"GramTracker-{version}.apk"
+    if not apk.exists():
+        sys.exit(f"{apk.name} not found. Build it first with android\\build-apk.cmd")
+    shell = int(re.search(r"SHELL_VERSION = (\d+);", (ROOT / "android/app/src/main/java/com/gramtracker/app/LiveUpdater.java").read_text(encoding="utf8")).group(1))
+    data = apk.read_bytes()
+    token = github_token()
+    rel = gh_api("POST", f"https://api.github.com/repos/{owner}/{repo}/releases", token, {
+        "tag_name": f"v{version}", "name": f"Gram Tracker {version}", "body": "\n".join("- " + n for n in notes)})
+    asset = gh_api("POST", f"https://uploads.github.com/repos/{owner}/{repo}/releases/{rel['id']}/assets?name={apk.name}",
+                   token, data, "application/vnd.android.package-archive")
+    major, minor, patch = (int(x) for x in version.split("."))
+    return {"version": version, "versionCode": major * 10000 + minor * 100 + patch, "shell": shell,
+            "url": asset["browser_download_url"], "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+
+
 def ver_tuple(v):
     return tuple(int(x) for x in v.split("."))
 
@@ -45,8 +86,9 @@ def main():
     if f"const UPDATE_REPO = '{owner}/{repo}';" not in app_js:
         sys.exit(f"app.js UPDATE_REPO doesn't match the GitHub repo {owner}/{repo}")
 
-    if MANIFEST.exists():
-        last = json.loads(MANIFEST.read_text(encoding="utf8"))["version"]
+    previous = json.loads(MANIFEST.read_text(encoding="utf8")) if MANIFEST.exists() else {}
+    if previous:
+        last = previous["version"]
         if ver_tuple(version) <= ver_tuple(last):
             sys.exit(f"Version {version} is not newer than the published {last}. Run release.py first.")
 
@@ -75,12 +117,16 @@ def main():
         "base": f"https://raw.githubusercontent.com/{owner}/{repo}/{commit}/app/",
         "files": files,
     }
+    # the latest full app (APK); kept from the previous manifest unless --apk publishes a new one
+    apk_entry = upload_apk(owner, repo, version, version_info.get("notes", [])) if "--apk" in sys.argv else previous.get("apk")
+    if apk_entry:
+        manifest["apk"] = apk_entry
     MANIFEST.parent.mkdir(exist_ok=True)
     MANIFEST.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf8")
     git("add", str(MANIFEST.relative_to(ROOT)))
     git("commit", "-q", "-m", f"Publish update {version}")
     git("push", "-q", "origin", "HEAD:main")
-    print(f"Published {version}: phones will see it under Settings > Check for updates.")
+    print(f"Published {version}{' with APK ' + manifest['apk']['url'] if '--apk' in sys.argv else ''}: phones will see it under Settings > Check for updates.")
 
 
 if __name__ == "__main__":

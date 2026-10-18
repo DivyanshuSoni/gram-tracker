@@ -2,6 +2,9 @@ package com.gramtracker.app;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,6 +13,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONArray;
@@ -47,8 +51,8 @@ import java.util.concurrent.Executors;
  */
 public class LiveUpdater {
     /** Bump only when the Java shell changes in a way new web files depend on (then a new APK is needed). */
-    public static final int SHELL_VERSION = 3;
-    private static final String[] ALLOWED_HOSTS = {"api.github.com", "raw.githubusercontent.com"};
+    public static final int SHELL_VERSION = 4;
+    private static final String[] ALLOWED_HOSTS = {"api.github.com", "raw.githubusercontent.com", "github.com"};
     private static final long BOOT_TIMEOUT_MS = 15000;
 
     private final Activity act;
@@ -66,6 +70,9 @@ public class LiveUpdater {
     private volatile boolean busy;
 
     private static class Item { String path, sha, action; long size; }
+
+    private JSONObject apkInfo;   // set when the update needs a new app version
+    private File apkFile;
 
     public LiveUpdater(Activity act, WebView web) {
         this.act = act;
@@ -175,6 +182,14 @@ public class LiveUpdater {
                 send(state("checking"));
                 JSONObject m = new JSONObject(new String(get(manifestUrl, "application/vnd.github.raw+json", null), StandardCharsets.UTF_8));
                 String version = m.getString("version");
+                // A newer Android shell is published: offer the full app update (Android's installer confirms it)
+                JSONObject apk = m.optJSONObject("apk");
+                if (apk != null && apk.optInt("shell", 0) > SHELL_VERSION) {
+                    apkInfo = apk;
+                    send(state("app-available").put("version", apk.optString("version", version)).put("bytes", apk.optLong("size", 0))
+                            .put("notes", m.optJSONArray("notes") == null ? new JSONArray() : m.getJSONArray("notes")));
+                    return;
+                }
                 if (m.optInt("minShell", 1) > SHELL_VERSION) { send(state("needs-app").put("version", version)); return; }
                 if (compare(version, currentVersion()) <= 0) { send(state("latest")); return; }
                 buildPlan(m);
@@ -225,6 +240,64 @@ public class LiveUpdater {
                 if (stage != null) deleteTree(stage);
                 send(error("The download didn’t finish. Check your internet and try again."));
             } finally { busy = false; }
+        });
+    }
+
+    /* ---------- full app updates (only when the Android part changes) ---------- */
+
+    /** Download the new APK from the GitHub release and check its SHA-256. Progress arrives as "downloading". */
+    @JavascriptInterface
+    public void downloadApp() {
+        if (busy || apkInfo == null) return;
+        busy = true;
+        worker.submit(() -> {
+            File out = null;
+            try {
+                File dir = new File(act.getCacheDir(), "updates");
+                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("mkdir");
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                out = new File(dir, "GramTracker-" + apkInfo.optString("version", "new") + ".apk");
+                final long total = apkInfo.optLong("size", 0);
+                planBytes = total;
+                long[] lastSent = {0};
+                get(apkInfo.getString("url"), "application/octet-stream", out, n -> {
+                    long now = System.currentTimeMillis();
+                    if (now - lastSent[0] > 150) { lastSent[0] = now; progress(n); }
+                });
+                if (!apkInfo.getString("sha256").equals(sha256(new FileInputStream(out)))) throw new IOException("checksum");
+                apkFile = out;
+                progress(total);
+                send(state("app-ready").put("version", apkInfo.optString("version")));
+            } catch (Exception e) {
+                if (out != null) //noinspection ResultOfMethodCallIgnored
+                    out.delete();
+                send(error("The app download didn\u2019t finish. Check your internet and try again."));
+            } finally { busy = false; }
+        });
+    }
+
+    /** Open Android's install box for the downloaded APK. The first time, Android asks to allow installs from Gram Tracker. */
+    @JavascriptInterface
+    public void installApp() {
+        if (apkFile == null || !apkFile.isFile()) { send(error("Download the update again.")); return; }
+        ui.post(() -> {
+            try {
+                if (!act.getPackageManager().canRequestPackageInstalls()) {
+                    act.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + act.getPackageName())));
+                    send(state("needs-permission"));
+                    return;
+                }
+                Uri uri = FileProvider.getUriForFile(act, act.getPackageName() + ".files", apkFile);
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(uri, "application/vnd.android.package-archive");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.startActivity(i);
+                send(state("installing"));
+            } catch (Exception e) {
+                send(error("Android couldn\u2019t open the installer."));
+            }
         });
     }
 
