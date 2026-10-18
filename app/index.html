@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gram Tracker</title>
+<meta name="theme-color" content="#0D6A5E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gram Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand"><h1>Gram Tracker</h1><small id="modeTag"></small></div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <main>
+    <section id="view-today"></section>
+    <section id="view-foods" hidden></section>
+    <section id="view-bowls" hidden></section>
+    <section id="view-settings" hidden></section>
+  </main>
+</div>
+
+<button class="fab" id="fab" data-act="log">+ Log food</button>
+
+<nav class="tabs" aria-label="Sections">
+  <div class="tabs-in" role="tablist">
+    <button class="tab" role="tab" data-tab="today" aria-selected="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Today</button>
+    <button class="tab" role="tab" data-tab="foods" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Foods</button>
+    <button class="tab" role="tab" data-tab="bowls" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M3 11h18a9 9 0 0 1-18 0Z"/><path d="M9 20h6"/></svg>Bowls</button>
+    <button class="tab" role="tab" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Settings<span class="badge" id="updBadge" hidden></span></button>
+  </div>
+</nav>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head"><h2 id="sheetTitle"></h2><button class="iconbtn" data-act="close" aria-label="Close">Close</button></div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/tesseract.min.js"></script>
+<script src="db.js"></script>
+<script src="label.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

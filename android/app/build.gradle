@@ -1,0 +1,61 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The version comes from the web app's version.json, so release.py bumps the APK too.
+def webVersion = new groovy.json.JsonSlurper().parse(file('../../app/version.json')).version as String
+def v = webVersion.tokenize('.').collect { it as int }
+
+def keyProps = new Properties()
+def keyFile = rootProject.file('keystore/keystore.properties')
+if (keyFile.exists()) keyFile.withInputStream { keyProps.load(it) }
+
+android {
+    namespace 'com.gramtracker.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.gramtracker.app'
+        minSdk 29
+        targetSdk 34
+        versionCode v[0] * 10000 + v[1] * 100 + v[2]
+        versionName webVersion
+    }
+
+    signingConfigs {
+        release {
+            if (keyFile.exists()) {
+                storeFile rootProject.file('keystore/' + keyProps['storeFile'])
+                storePassword keyProps['storePassword']
+                keyAlias keyProps['keyAlias']
+                keyPassword keyProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // The whole web app (gram-tracker/app) is bundled as-is: no hosting needed, works offline.
+    sourceSets {
+        main { assets.srcDirs = ['../../app'] }
+    }
+
+    androidResources {
+        noCompress 'gz', 'wasm'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'androidx.core:core:1.13.1'
+}

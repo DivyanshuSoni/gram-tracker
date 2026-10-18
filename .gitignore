@@ -1,0 +1,10 @@
+# Signing key: never publish (anyone with it could sign apps as Gram Tracker)
+android/keystore/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+__pycache__/
+# the first prototype (claude.ai artifact version)
+/index.html
