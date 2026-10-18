@@ -1,7 +1,7 @@
 {
-  "version": "1.4.2",
+  "version": "1.4.3",
   "date": "2026-10-19",
   "notes": [
-    "Roomier energy field in the food form: the number and the kcal/kJ picker no longer squeeze each other."
+    "On the Foods tab the floating button now says + Food (+ Recipe on Recipes) and adds one directly."
   ]
 }

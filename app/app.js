@@ -1,5 +1,5 @@
 /* Gram Tracker — offline app. Data lives in IndexedDB on this phone (db.js); labels are read on-device (label.js). */
-const APP_VERSION = '1.4.2';
+const APP_VERSION = '1.4.3';
 /* Inside the Android APK, the wrapper adds window.GramAndroid (file saving). Assets are bundled, so no service worker is needed. */
 const IS_APK = !!window.GramAndroid;
 /* GitHub repo the app updates from (owner/name). publish.py uploads each new version there. */
@@ -131,6 +131,10 @@ function renderAll(){
   $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === S.view)));
   ['today', 'foods', 'bowls', 'settings'].forEach(v => $('#view-' + v).hidden = v !== S.view);
   $('#fab').hidden = S.view === 'settings' || !S.ready;
+  // the floating button follows the tab: add a food (or recipe) on Foods, log food everywhere else
+  const fab = $('#fab'), onFoods = S.view === 'foods', recipes = onFoods && S.foodsTab === 'recipes';
+  fab.textContent = recipes ? '+ Recipe' : onFoods ? '+ Food' : '+ Log food';
+  fab.dataset.act = recipes ? 'newrecipe' : onFoods ? 'newfood' : 'log';
   $('#updBadge').hidden = !['available', 'ready', 'app-available', 'app-ready'].includes(UPD.state);
   if (!S.ready) return;
   if (S.view === 'today') renderToday();
@@ -927,7 +931,7 @@ document.addEventListener('click', e => {
     pendingDel = null;
     saveDoc('days', {id: S.date, date: S.date, entries: dayEntries(S.date).filter(x => x.id !== id)}); toast('Entry deleted');
   }
-  else if (a === 'ftab') { S.foodsTab = t.dataset.v; renderFoods(); }
+  else if (a === 'ftab') { S.foodsTab = t.dataset.v; renderAll(); }
   else if (a === 'newfood') openFoodSheet(null, {scan: !!t.dataset.scan, returnTo: t.dataset.from || null});
   else if (a === 'editfood') openFoodSheet(id);
   else if (a === 'newrecipe') openRecipeSheet(null);
